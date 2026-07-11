@@ -1,0 +1,15 @@
+[project]
+name = "undulating-glitch"
+version = "0.1.0"
+description = "Four-way travelling wave and block-glitch video compositor nodes for ComfyUI."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { file = "LICENSE" }
+dependencies = []
+
+[project.urls]
+Repository = "https://github.com/jsterlingvids/ComfyUI-UndulatingGlitch"
+
+[tool.comfy]
+PublisherId = "YOUR_COMFY_PUBLISHER_ID"
+DisplayName = "Undulating Glitch"
