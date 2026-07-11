@@ -30,6 +30,12 @@ Outputs:
 - `field_preview`: coloured preview showing which source controls each area
 - `transition_edges`: mask around active blend boundaries
 
+The mixer includes three movement modes:
+
+- `sequential_wipe`: a clean undulating transition front
+- `liquid_wipe`: a continuously reshaping, domain-warped liquid front
+- `four_way_bands`: all four sources moving through the frame as bands
+
 ### Undulating Glitch Field (4-Way)
 
 Generates the effect separately as a continuous `MASK`. Use this when you want to inspect, modify, blur, distort, or reuse the field.
@@ -77,28 +83,31 @@ No extra Python packages are required; it only uses PyTorch already included wit
 
 ## Suggested starting settings
 
-For a continuous wave travelling left to right through all four sources:
+For a liquid-glitch wave travelling left to right through all four sources:
 
 ```text
-mode: sequential_wipe
-cycle_frames: 144
+mode: liquid_wipe
+cycle_frames: 128
 transition_fraction: 1.00
 angle: 0
-wave_count: 2.0
-wave_amplitude: 0.15
-wave_speed: 4
-noise_amount: 0.025
-noise_scale: 2
+wave_count: 2.4
+wave_amplitude: 0.18
+wave_speed: 5
+noise_amount: 0.035
+noise_scale: 3
+noise_speed: 2
 block_size: 48
-block_jitter: 0.020
+block_jitter: 0.018
 tear_height: 20
-tear_amount: 0.015
-glitch_speed: 6
-edge_softness: 14
+tear_amount: 0.012
+glitch_speed: 7
+edge_softness: 18
 blend_curve: smoothstep
 ```
 
-At 24 fps, `cycle_frames: 144` makes one complete A → B → C → D → A cycle last six seconds. With `transition_fraction: 1.00`, each new boundary begins as soon as the previous one exits.
+At 24 fps, `cycle_frames: 128` makes one complete A → B → C → D → A cycle last about 5.3 seconds. With `transition_fraction: 1.00`, each new boundary begins as soon as the previous one exits.
+
+In `liquid_wipe`, `wave_amplitude` controls the overall depth of the advancing lobes, `wave_count` controls their density, and `wave_speed` controls how actively the large and small ripples crawl along the transition edge. Whole-number wave speeds produce a seamless complete effect cycle.
 
 For harder digital blocks, increase `block_jitter`, lower `edge_softness`, and use `hard` blending. For a flowing liquid boundary, reduce `block_jitter` and `tear_amount`, then increase `wave_amplitude` and `edge_softness`.
 
@@ -129,4 +138,4 @@ A release should include a short demo GIF/video and a downloadable example workf
 
 ## Status
 
-Prototype `0.2.0`. The core effect, tensor handling, and quick alignment transforms are implemented and covered by basic tests, but the pack still benefits from real-world testing inside your specific ComfyUI installation and VHS workflow.
+Prototype `0.3.0`. The core effect, liquid movement model, tensor handling, and quick alignment transforms are implemented and covered by basic tests, but the pack still benefits from real-world testing inside your specific ComfyUI installation and VHS workflow.
