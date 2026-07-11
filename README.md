@@ -158,6 +158,19 @@ The four videos should ideally share the same:
 
 Use **Four-Way Quick Align** when composition or head placement differs slightly. The mixer's `frame_alignment` setting can then trim, loop, or stretch shorter batches.
 
+## Long videos and RAM-safe streaming
+
+Four 1280×1280 float-image batches can consume tens of gigabytes before compositing. For long clips, add **VHS Meta Batch Manager** and connect its `meta_batch` output to:
+
+- all four VHS Load Video nodes
+- Four-Way Undulating Glitch Mixer
+- Liquid Transition Warp
+- every VHS Video Combine output
+
+Start with `frames_per_batch: 16` at 1280×1280. The mixer preserves its global frame offset between VHS sub-executions, and the warp uses the same offset for continuous ripple animation, so batching does not reset the wave at every chunk. Video Combine keeps one encoder open and produces one final video.
+
+The alignment and trim-shortest paths also reuse original tensors when no resize or transform is required, avoiding redundant full-batch copies.
+
 ## Publishing
 
 The repository is already structured like a normal ComfyUI custom node. Before Registry publishing:
@@ -174,4 +187,4 @@ A release should include a short demo GIF/video and a downloadable example workf
 
 ## Status
 
-Prototype `0.7.0`. The core effect, continuous liquid timing, transition-warp, water-ripple and color-fringe models, tensor handling, and quick alignment transforms are implemented and covered by tests, but the pack still benefits from real-world testing inside your specific ComfyUI installation and VHS workflow.
+Prototype `0.8.0`. The core effect, continuous liquid timing, transition-warp, water-ripple, color-fringe, RAM-safe VHS meta batching, tensor handling, and quick alignment transforms are implemented and covered by tests, but the pack still benefits from real-world testing inside your specific ComfyUI installation and VHS workflow.
