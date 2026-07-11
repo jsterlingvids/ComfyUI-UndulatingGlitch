@@ -134,6 +134,8 @@ def _liquid_transition_warp(
     ripple_speed=2.0,
     rgb_split=1.5,
     interpolation="bicubic",
+    color_fringe=False,
+    color_fringe_strength=0.08,
 ):
     """Warp pixels around an animated transition-edge mask.
 
@@ -231,6 +233,41 @@ def _liquid_transition_warp(
         )
         warped = warped.clone()
         warped[:, 0:1], warped[:, 2:3] = red, blue
+
+    fringe_strength = max(0.0, float(color_fringe_strength))
+    if bool(color_fringe) and fringe_strength > 0 and channels >= 3:
+        # Concentrate the grade on the two slopes of the transition rather than
+        # washing the whole blend. The dominant normal component gives opposite
+        # signs on the incoming and outgoing sides of the wave.
+        frame_peak = magnitude.amax(dim=(2, 3), keepdim=True).clamp_min(1e-6)
+        slope = (magnitude / frame_peak).sqrt().clamp(0, 1)
+        fringe = (active * slope).clamp(0, 1)
+        side = torch.where(
+            normal_x.abs() >= normal_y.abs(), normal_x, normal_y
+        ).clamp(-1, 1)
+
+        rgb = warped[:, :3]
+        luma = (
+            rgb[:, 0:1] * 0.2126
+            + rgb[:, 1:2] * 0.7152
+            + rgb[:, 2:3] * 0.0722
+        )
+        desaturate = (fringe * fringe_strength).clamp(0, 1)
+        rgb = rgb * (1 - desaturate) + luma * desaturate
+
+        contrast = 1 + fringe * fringe_strength * 0.5
+        rgb = (rgb - 0.5) * contrast + 0.5
+
+        # Positive and negative sides receive opposite, near-luma-neutral gains:
+        # restrained magenta on one fringe and cyan/green on the other.
+        tint_vector = torch.tensor(
+            [0.90, -0.55, 0.65], device=device, dtype=dtype
+        )[None, :, None, None]
+        tint = side * fringe * fringe_strength * 0.45
+        rgb = rgb * (1 + tint * tint_vector)
+
+        warped = warped.clone()
+        warped[:, :3] = rgb.clamp(0, 1)
 
     return warped.movedim(1, -1).clamp(0, 1), active[:, 0]
 
@@ -595,6 +632,8 @@ class LiquidTransitionWarp:
                 "ripple_speed": ("FLOAT", {"default": 2.0, "min": -12.0, "max": 12.0, "step": 0.1}),
                 "rgb_split": ("FLOAT", {"default": 1.5, "min": 0.0, "max": 24.0, "step": 0.25}),
                 "interpolation": (["bicubic", "bilinear", "nearest"],),
+                "color_fringe": ("BOOLEAN", {"default": False}),
+                "color_fringe_strength": ("FLOAT", {"default": 0.08, "min": 0.0, "max": 1.0, "step": 0.01}),
             }
         }
 
@@ -614,6 +653,8 @@ class LiquidTransitionWarp:
         ripple_speed,
         rgb_split,
         interpolation,
+        color_fringe,
+        color_fringe_strength,
     ):
         return _liquid_transition_warp(
             images,
@@ -625,6 +666,8 @@ class LiquidTransitionWarp:
             ripple_speed=ripple_speed,
             rgb_split=rgb_split,
             interpolation=interpolation,
+            color_fringe=color_fringe,
+            color_fringe_strength=color_fringe_strength,
         )
 
 
