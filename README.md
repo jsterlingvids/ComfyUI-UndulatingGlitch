@@ -44,6 +44,32 @@ Generates the effect separately as a continuous `MASK`. Use this when you want t
 
 Applies a generated source field to four `IMAGE` batches.
 
+### Liquid Transition Warp
+
+Adds a localized refractive glitch to the mixer's active transition boundary. Connect both `images` and `transition_edges` from **Four-Way Undulating Glitch Mixer**:
+
+```text
+Mixer images ──────────────┐
+                           ├→ Liquid Transition Warp → Video Combine
+Mixer transition_edges ────┘
+```
+
+The warp briefly expands and compresses pixels around the moving boundary, adds ripples travelling along the edge, and can split the red and blue channels for a stronger optical glitch. Areas away from the transition remain unchanged.
+
+Suggested starting settings:
+
+```text
+warp_strength: 12
+warp_width: 1.4
+ripple_amount: 3
+ripple_scale: 3
+ripple_speed: 2
+rgb_split: 1.5
+interpolation: bicubic
+```
+
+Use a negative `warp_strength` to reverse the lens direction. Reduce `rgb_split` to zero for a purely liquid/refraction effect.
+
 ## Installation
 
 ### Git clone
@@ -138,4 +164,4 @@ A release should include a short demo GIF/video and a downloadable example workf
 
 ## Status
 
-Prototype `0.3.0`. The core effect, liquid movement model, tensor handling, and quick alignment transforms are implemented and covered by basic tests, but the pack still benefits from real-world testing inside your specific ComfyUI installation and VHS workflow.
+Prototype `0.4.0`. The core effect, liquid movement and transition-warp models, tensor handling, and quick alignment transforms are implemented and covered by basic tests, but the pack still benefits from real-world testing inside your specific ComfyUI installation and VHS workflow.
