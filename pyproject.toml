@@ -1,6 +1,6 @@
 [project]
 name = "undulating-glitch"
-version = "0.6.0"
+version = "0.7.0"
 description = "Four-way alignment, travelling wave, and block-glitch video compositor nodes for ComfyUI."
 readme = "README.md"
 requires-python = ">=3.10"
