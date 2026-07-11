@@ -136,6 +136,8 @@ def _liquid_transition_warp(
     interpolation="bicubic",
     color_fringe=False,
     color_fringe_strength=0.08,
+    water_ripple=False,
+    water_ripple_strength=1.5,
 ):
     """Warp pixels around an animated transition-edge mask.
 
@@ -184,6 +186,26 @@ def _liquid_transition_warp(
         normal_y * float(warp_strength)
         + tangent_y * ripple * float(ripple_amount)
     )
+
+    ripple_strength = max(0.0, float(water_ripple_strength))
+    water_echo = torch.zeros_like(active)
+    if bool(water_ripple) and ripple_strength > 0:
+        # transition_edges is approximately a bell-shaped cross-section around
+        # the moving front. -log(mask) behaves like distance from that front,
+        # letting us create alternating, parallel compression/expansion bands
+        # without needing an expensive signed-distance transform.
+        distance = -torch.log(mask.clamp_min(1e-4))
+        echo_envelope = (
+            (1 - mask).clamp(0, 1).pow(0.70)
+            * torch.exp(-distance * 0.68)
+        )
+        water_echo = (
+            torch.sin(distance * 3.65)
+            * echo_envelope
+            * ripple_strength
+        )
+        displacement_x = displacement_x + normal_x * water_echo
+        displacement_y = displacement_y + normal_y * water_echo
 
     base_y, base_x = torch.meshgrid(
         torch.linspace(-1, 1, h, device=device, dtype=dtype),
@@ -269,7 +291,14 @@ def _liquid_transition_warp(
         warped = warped.clone()
         warped[:, :3] = rgb.clamp(0, 1)
 
-    return warped.movedim(1, -1).clamp(0, 1), active[:, 0]
+    warp_activity = active
+    if bool(water_ripple) and ripple_strength > 0:
+        echo_activity = (
+            water_echo.abs() / max(1e-5, ripple_strength)
+        ).clamp(0, 1)
+        warp_activity = torch.maximum(active, echo_activity)
+
+    return warped.movedim(1, -1).clamp(0, 1), warp_activity[:, 0]
 
 
 def _rand(shape, seed, device, dtype):
@@ -634,6 +663,8 @@ class LiquidTransitionWarp:
                 "interpolation": (["bicubic", "bilinear", "nearest"],),
                 "color_fringe": ("BOOLEAN", {"default": False}),
                 "color_fringe_strength": ("FLOAT", {"default": 0.08, "min": 0.0, "max": 1.0, "step": 0.01}),
+                "water_ripple": ("BOOLEAN", {"default": False}),
+                "water_ripple_strength": ("FLOAT", {"default": 1.5, "min": 0.0, "max": 24.0, "step": 0.25}),
             }
         }
 
@@ -655,6 +686,8 @@ class LiquidTransitionWarp:
         interpolation,
         color_fringe,
         color_fringe_strength,
+        water_ripple,
+        water_ripple_strength,
     ):
         return _liquid_transition_warp(
             images,
@@ -668,6 +701,8 @@ class LiquidTransitionWarp:
             interpolation=interpolation,
             color_fringe=color_fringe,
             color_fringe_strength=color_fringe_strength,
+            water_ripple=water_ripple,
+            water_ripple_strength=water_ripple_strength,
         )
 
 
