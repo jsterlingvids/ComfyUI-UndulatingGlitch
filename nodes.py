@@ -31,7 +31,12 @@ def _align(xs, mode):
     for x in xs:
         x = _resize(x.to(device=dev, dtype=dtype), h, w)
         m = int(x.shape[0])
-        if mode == "loop_shorter":
+        if mode == "trim_shortest":
+            # Slicing is a view; index_select would duplicate every full video
+            # batch and can consume several additional gigabytes at 1280².
+            out.append(x[:n])
+            continue
+        elif mode == "loop_shorter":
             idx = torch.arange(n, device=dev) % m
         elif mode == "stretch_shorter":
             idx = (
@@ -64,6 +69,17 @@ def _transform_image(
     image = _resize(image, output_h, output_w)
     batch, _, _, channels = image.shape
     device, dtype = image.device, image.dtype
+
+    # Preserve the original tensor when no alignment is required. This is both
+    # lossless and important for streamed 1280² video batches, where an identity
+    # grid_sample would otherwise create a large redundant copy.
+    if (
+        abs(float(offset_x)) < 1e-8
+        and abs(float(offset_y)) < 1e-8
+        and abs(float(scale) - 1.0) < 1e-8
+        and abs(float(rotation)) < 1e-8
+    ):
+        return image
 
     safe_scale = max(1e-4, float(scale))
     angle = math.radians(float(rotation))
@@ -138,6 +154,8 @@ def _liquid_transition_warp(
     color_fringe_strength=0.08,
     water_ripple=False,
     water_ripple_strength=1.5,
+    frame_start=0,
+    total_frames=None,
 ):
     """Warp pixels around an animated transition-edge mask.
 
@@ -163,9 +181,14 @@ def _liquid_transition_warp(
 
     yy = torch.linspace(-0.5, 0.5, h, device=device, dtype=dtype)[None, None, :, None]
     xx = torch.linspace(-0.5, 0.5, w, device=device, dtype=dtype)[None, None, None, :]
+    phase_length = max(1, int(total_frames or frames))
     frame_phase = (
-        torch.arange(frames, device=device, dtype=dtype)
-        / max(1, frames)
+        torch.arange(
+            int(frame_start), int(frame_start) + frames,
+            device=device,
+            dtype=dtype,
+        )
+        / phase_length
     )[:, None, None, None]
     ripple = torch.sin(
         2
@@ -665,7 +688,10 @@ class LiquidTransitionWarp:
                 "color_fringe_strength": ("FLOAT", {"default": 0.08, "min": 0.0, "max": 1.0, "step": 0.01}),
                 "water_ripple": ("BOOLEAN", {"default": False}),
                 "water_ripple_strength": ("FLOAT", {"default": 1.5, "min": 0.0, "max": 24.0, "step": 0.25}),
-            }
+            },
+            "optional": {
+                "meta_batch": ("VHS_BatchManager",),
+            },
         }
 
     RETURN_TYPES = ("IMAGE", "MASK")
@@ -688,7 +714,15 @@ class LiquidTransitionWarp:
         color_fringe_strength,
         water_ripple,
         water_ripple_strength,
+        meta_batch=None,
     ):
+        frame_start = 0
+        total_frames = int(images.shape[0])
+        if meta_batch is not None:
+            frame_start = int(getattr(meta_batch, "_ug_current_batch_start", 0))
+            known_total = getattr(meta_batch, "total_frames", total_frames)
+            if math.isfinite(float(known_total)):
+                total_frames = max(total_frames, int(known_total))
         return _liquid_transition_warp(
             images,
             transition_edges,
@@ -703,6 +737,8 @@ class LiquidTransitionWarp:
             color_fringe_strength=color_fringe_strength,
             water_ripple=water_ripple,
             water_ripple_strength=water_ripple_strength,
+            frame_start=frame_start,
+            total_frames=total_frames,
         )
 
 
@@ -798,7 +834,13 @@ class FourWayUndulatingGlitchMixer:
                 "frame_alignment": (["trim_shortest", "loop_shorter", "stretch_shorter"],),
                 "blend_curve": (["smoothstep", "linear", "hard"],),
                 **EFFECT_INPUTS,
-            }
+            },
+            "optional": {
+                "meta_batch": ("VHS_BatchManager",),
+            },
+            "hidden": {
+                "unique_id": "UNIQUE_ID",
+            },
         }
 
     RETURN_TYPES = ("IMAGE", "IMAGE", "MASK")
@@ -814,15 +856,33 @@ class FourWayUndulatingGlitchMixer:
         images_d,
         frame_alignment,
         blend_curve,
+        meta_batch=None,
+        unique_id=None,
         **kw,
     ):
         xs, n, h, w = _align(
             [images_a, images_b, images_c, images_d], frame_alignment
         )
+        frame_start = 0
+        if meta_batch is not None:
+            states = getattr(meta_batch, "_ug_frame_offsets", None)
+            if states is None:
+                states = {}
+                meta_batch._ug_frame_offsets = states
+            state_key = str(unique_id or "mixer")
+            # VHS leaves its encoder outputs open between sub-executions. An
+            # empty outputs map identifies the first batch of a new queue.
+            if not getattr(meta_batch, "outputs", {}):
+                states[state_key] = 0
+            frame_start = int(states.get(state_key, 0))
+            states[state_key] = frame_start + n
+            meta_batch._ug_current_batch_start = frame_start
+
         field, _ = _field(
             n,
             h,
             w,
+            start=frame_start,
             device=xs[0].device,
             dtype=xs[0].dtype,
             **kw,
