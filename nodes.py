@@ -323,6 +323,7 @@ def _field(
     edge_softness=10.0,
     band_count=1,
     seed=42,
+    wave_overlap=0.08,
     device=None,
     dtype=torch.float32,
     chunk_size=8,
@@ -406,6 +407,23 @@ def _field(
             spatial * max(1, int(band_count)) * 4 + p * 4, 4
         )
         field = coord / 4
+    elif mode == "liquid_wipe":
+        # A continuously advancing staircase of source indices. A new front is
+        # emitted every source stage; travel_duration > 1 means the outgoing
+        # front is still leaving the right edge as the next enters from the left.
+        # The half-stage offset puts those two fronts at opposite edges at the
+        # cycle boundary instead of beginning on a solid frame.
+        stage = phase[:, None, None] * 4
+        travel_duration = 1.0 + max(0.0, float(wave_overlap))
+        source_position = stage + 0.5 - spatial * travel_duration
+        base = torch.floor(source_position)
+        frac = source_position - base
+        softness = max(
+            1e-5,
+            (edge_softness / max(h, w)) * travel_duration,
+        )
+        blend = torch.sigmoid((frac - 0.5) / softness)
+        field = torch.remainder(base + blend, 4) / 4
     else:
         stage = phase * 4
         current = torch.floor(stage)
@@ -482,6 +500,7 @@ EFFECT_INPUTS = {
     "edge_softness": ("FLOAT", {"default": 10.0, "min": 0.0, "max": 256.0, "step": 0.5}),
     "band_count": ("INT", {"default": 1, "min": 1, "max": 16}),
     "seed": ("INT", {"default": 42, "min": 0, "max": 0xFFFFFFFFFFFFFFFF}),
+    "wave_overlap": ("FLOAT", {"default": 0.08, "min": 0.0, "max": 0.5, "step": 0.01}),
 }
 
 
