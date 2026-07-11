@@ -67,6 +67,39 @@ def test_field_shapes_and_range():
     assert 0.0 <= float(field.min()) <= float(field.max()) <= 1.0
 
 
+def test_liquid_wipe_is_animated_and_loop_compatible():
+    kwargs = effect_kwargs()
+    kwargs.update(
+        mode="liquid_wipe",
+        cycle_frames=16,
+        transition_fraction=1.0,
+        wave_count=2.4,
+        wave_amplitude=0.18,
+        wave_speed=4.0,
+        noise_amount=0.0,
+        block_jitter=0.0,
+        tear_amount=0.0,
+    )
+    field, edge = nodes._field(17, 32, 48, **kwargs)
+
+    assert field.shape == (17, 32, 48)
+    assert torch.isfinite(field).all()
+    assert not torch.allclose(field[0], field[1])
+    assert torch.allclose(field[0], field[16], atol=2e-5)
+    assert torch.allclose(edge[0], edge[16], atol=2e-5)
+
+
+def test_liquid_wave_contains_more_edge_detail_than_single_sine():
+    perp = torch.linspace(-0.5, 0.5, 128)[None, None, :]
+    phase = torch.tensor([0.23])[:, None, None]
+    liquid = nodes._liquid_wave(perp, phase, 2.4, 0.18, 4.0)
+    simple = 0.18 * torch.sin(2 * torch.pi * (perp * 2.4 - phase * 4.0))
+
+    liquid_curvature = torch.diff(liquid, n=2, dim=-1).abs().mean()
+    simple_curvature = torch.diff(simple, n=2, dim=-1).abs().mean()
+    assert liquid_curvature > simple_curvature
+
+
 def test_all_in_one_mixer():
     inputs = [
         solid(16, 24, 32, (1, 0, 0)),
