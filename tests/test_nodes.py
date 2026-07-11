@@ -217,6 +217,8 @@ def test_liquid_transition_warp_zero_strength_is_identity():
         ripple_amount=0.0,
         rgb_split=0.0,
         interpolation="nearest",
+        color_fringe=False,
+        color_fringe_strength=1.0,
     )
 
     assert output.shape == image.shape
@@ -258,6 +260,42 @@ def test_liquid_transition_warp_rgb_split_separates_channels():
 
     channel_difference = (output[..., 0] - output[..., 2]).abs()
     assert float(channel_difference[:, :, 18:30].max()) > 1e-3
+
+
+def test_color_fringe_is_subtle_localized_and_toggleable():
+    image, edge = transition_fixture()
+    base, _ = nodes._liquid_transition_warp(
+        image,
+        edge,
+        warp_strength=0.0,
+        ripple_amount=0.0,
+        rgb_split=0.0,
+        interpolation="bilinear",
+        color_fringe=False,
+        color_fringe_strength=0.5,
+    )
+    colored, _ = nodes._liquid_transition_warp(
+        image,
+        edge,
+        warp_strength=0.0,
+        ripple_amount=0.0,
+        rgb_split=0.0,
+        interpolation="bilinear",
+        color_fringe=True,
+        color_fringe_strength=0.08,
+    )
+
+    assert torch.allclose(base, image, atol=2e-6)
+    difference = (colored - base).abs().mean(dim=-1)
+    assert float(difference[:, :, 18:30].max()) > 1e-4
+    assert float(difference[:, :, :4].max()) < 1e-5
+    assert float(difference[:, :, -4:].max()) < 1e-5
+
+    edge_channel_split = (
+        colored[..., 0] - colored[..., 2]
+    ).abs()[:, :, 18:30]
+    assert float(edge_channel_split.max()) > 1e-4
+    assert float(difference.max()) < 0.08
 
 
 def test_liquid_transition_warp_registered_in_comfyui_mappings():
