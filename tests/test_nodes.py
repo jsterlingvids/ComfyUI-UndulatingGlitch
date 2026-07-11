@@ -170,3 +170,69 @@ def test_quick_align_scale_enlarges_marker():
 def test_quick_align_registered_in_comfyui_mappings():
     assert nodes.NODE_CLASS_MAPPINGS["UG_FourWayQuickAlign"] is nodes.FourWayQuickAlign
     assert nodes.NODE_DISPLAY_NAME_MAPPINGS["UG_FourWayQuickAlign"] == "Four-Way Quick Align"
+
+
+def transition_fixture(frames=4, height=32, width=48):
+    x = torch.linspace(0, 1, width)[None, None, :, None]
+    y = torch.linspace(0, 1, height)[None, :, None, None]
+    image = (0.7 * x + 0.3 * y).expand(frames, height, width, 3).clone()
+    edge_x = torch.linspace(-1, 1, width)[None, None, :]
+    edge = torch.exp(-((edge_x / 0.16) ** 2)).expand(frames, height, width).clone()
+    return image, edge
+
+
+def test_liquid_transition_warp_zero_strength_is_identity():
+    image, edge = transition_fixture()
+    output, warp_mask = nodes._liquid_transition_warp(
+        image,
+        edge,
+        warp_strength=0.0,
+        ripple_amount=0.0,
+        rgb_split=0.0,
+        interpolation="nearest",
+    )
+
+    assert output.shape == image.shape
+    assert warp_mask.shape == edge.shape
+    assert torch.equal(output, image)
+
+
+def test_liquid_transition_warp_is_localized_to_edge():
+    image, edge = transition_fixture()
+    output, warp_mask = nodes._liquid_transition_warp(
+        image,
+        edge,
+        warp_strength=10.0,
+        warp_width=1.4,
+        ripple_amount=3.0,
+        ripple_scale=3.0,
+        ripple_speed=2.0,
+        rgb_split=0.0,
+        interpolation="bilinear",
+    )
+
+    difference = (output - image).abs().mean(dim=-1)
+    assert float(difference[:, :, 18:30].max()) > 1e-3
+    assert float(difference[:, :, :4].max()) < 1e-4
+    assert float(difference[:, :, -4:].max()) < 1e-4
+    assert float(warp_mask[:, :, 18:30].max()) > 0.5
+
+
+def test_liquid_transition_warp_rgb_split_separates_channels():
+    image, edge = transition_fixture()
+    output, _ = nodes._liquid_transition_warp(
+        image,
+        edge,
+        warp_strength=0.0,
+        ripple_amount=0.0,
+        rgb_split=4.0,
+        interpolation="bilinear",
+    )
+
+    channel_difference = (output[..., 0] - output[..., 2]).abs()
+    assert float(channel_difference[:, :, 18:30].max()) > 1e-3
+
+
+def test_liquid_transition_warp_registered_in_comfyui_mappings():
+    assert nodes.NODE_CLASS_MAPPINGS["UG_LiquidTransitionWarp"] is nodes.LiquidTransitionWarp
+    assert nodes.NODE_DISPLAY_NAME_MAPPINGS["UG_LiquidTransitionWarp"] == "Liquid Transition Warp"
