@@ -654,7 +654,7 @@
       ],
       "flags": {},
       "order": 9,
-      "mode": 0,
+      "mode": 4,
       "inputs": [
         {
           "name": "images",
@@ -687,7 +687,7 @@
           "links": null
         }
       ],
-      "title": "FIELD PREVIEW — DEBUG MP4",
+      "title": "FIELD PREVIEW — DEBUG MP4 (BYPASSED FOR PERFORMANCE)",
       "properties": {
         "Node name for S&R": "VHS_VideoCombine"
       },
