@@ -146,6 +146,14 @@ def test_all_in_one_mixer():
     assert torch.isfinite(output).all()
 
 
+def test_trim_alignment_reuses_input_storage():
+    inputs = [solid(8, 12, 16, (i / 4, 0, 0)) for i in range(4)]
+    aligned, n, _, _ = nodes._align(inputs, "trim_shortest")
+    assert n == 8
+    for original, result in zip(inputs, aligned):
+        assert result.data_ptr() == original.data_ptr()
+
+
 def test_quick_align_identity_and_reference_dimensions():
     a = torch.rand((3, 24, 32, 3))
     b = torch.rand((3, 24, 32, 3))
@@ -360,3 +368,76 @@ def test_water_ripple_zero_strength_is_identity():
 def test_liquid_transition_warp_registered_in_comfyui_mappings():
     assert nodes.NODE_CLASS_MAPPINGS["UG_LiquidTransitionWarp"] is nodes.LiquidTransitionWarp
     assert nodes.NODE_DISPLAY_NAME_MAPPINGS["UG_LiquidTransitionWarp"] == "Liquid Transition Warp"
+
+
+class FakeMetaBatch:
+    def __init__(self, total_frames):
+        self.total_frames = total_frames
+        self.outputs = {}
+        self.has_closed_inputs = False
+
+
+def test_meta_batch_mixer_preserves_global_wave_phase():
+    inputs = [solid(4, 16, 20, (1, 0, 0)) for _ in range(4)]
+    meta = FakeMetaBatch(total_frames=8)
+    kwargs = effect_kwargs()
+
+    _, preview_a, _ = nodes.FourWayUndulatingGlitchMixer().mix(
+        *inputs,
+        frame_alignment="trim_shortest",
+        blend_curve="smoothstep",
+        meta_batch=meta,
+        unique_id="mixer-test",
+        **kwargs,
+    )
+    expected_a, _ = nodes._field(4, 16, 20, start=0, **kwargs)
+    assert torch.allclose(preview_a, nodes._preview(expected_a))
+    assert meta._ug_current_batch_start == 0
+
+    meta.outputs["combine"] = object()
+    _, preview_b, _ = nodes.FourWayUndulatingGlitchMixer().mix(
+        *inputs,
+        frame_alignment="trim_shortest",
+        blend_curve="smoothstep",
+        meta_batch=meta,
+        unique_id="mixer-test",
+        **kwargs,
+    )
+    expected_b, _ = nodes._field(4, 16, 20, start=4, **kwargs)
+    assert torch.allclose(preview_b, nodes._preview(expected_b))
+    assert meta._ug_current_batch_start == 4
+
+
+def test_meta_batch_warp_matches_single_full_execution():
+    image, edge = transition_fixture(frames=8)
+    kwargs = dict(
+        warp_strength=5.0,
+        warp_width=1.4,
+        ripple_amount=2.0,
+        ripple_scale=3.0,
+        ripple_speed=2.0,
+        rgb_split=0.0,
+        interpolation="bilinear",
+        color_fringe=False,
+        water_ripple=True,
+        water_ripple_strength=1.5,
+        total_frames=8,
+    )
+    full, _ = nodes._liquid_transition_warp(
+        image, edge, frame_start=0, **kwargs
+    )
+    first, _ = nodes._liquid_transition_warp(
+        image[:4], edge[:4], frame_start=0, **kwargs
+    )
+    second, _ = nodes._liquid_transition_warp(
+        image[4:], edge[4:], frame_start=4, **kwargs
+    )
+    streamed = torch.cat((first, second), dim=0)
+    assert torch.allclose(streamed, full, atol=2e-6)
+
+
+def test_streaming_sockets_are_available():
+    mixer_inputs = nodes.FourWayUndulatingGlitchMixer.INPUT_TYPES()
+    warp_inputs = nodes.LiquidTransitionWarp.INPUT_TYPES()
+    assert mixer_inputs["optional"]["meta_batch"] == ("VHS_BatchManager",)
+    assert warp_inputs["optional"]["meta_batch"] == ("VHS_BatchManager",)
