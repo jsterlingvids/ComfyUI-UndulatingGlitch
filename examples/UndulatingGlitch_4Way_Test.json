@@ -197,7 +197,7 @@
       ],
       "title": "LIQUID TRANSITION WARP — REFRACTION + RGB GLITCH",
       "properties": {"Node name for S&R": "UG_LiquidTransitionWarp"},
-      "widgets_values": [12.0, 1.4, 3.0, 3.0, 2.0, 1.5, "bicubic", true, 0.08]
+      "widgets_values": [12.0, 1.4, 3.0, 3.0, 2.0, 1.5, "bicubic", true, 0.08, true, 1.5]
     },
     {
       "id": 7,
