@@ -105,6 +105,136 @@ def _transform_image(
     ).clamp(0, 1)
 
 
+def _prepare_mask(mask, frames, h, w, image):
+    if mask.ndim == 2:
+        mask = mask[None]
+    if mask.ndim != 3:
+        raise ValueError(f"MASK must be [B,H,W] or [H,W], got {tuple(mask.shape)}")
+    mask = mask.to(device=image.device, dtype=image.dtype)
+    if mask.shape[0] != frames:
+        if mask.shape[0] == 1:
+            mask = mask.expand(frames, -1, -1)
+        else:
+            idx = torch.linspace(
+                0, mask.shape[0] - 1, frames, device=image.device
+            ).round().long()
+            mask = mask.index_select(0, idx)
+    return F.interpolate(
+        mask[:, None], (h, w), mode="bilinear", align_corners=False
+    ).clamp(0, 1)
+
+
+def _liquid_transition_warp(
+    images,
+    transition_edges,
+    warp_strength=12.0,
+    warp_width=1.4,
+    ripple_amount=3.0,
+    ripple_scale=3.0,
+    ripple_speed=2.0,
+    rgb_split=1.5,
+    interpolation="bicubic",
+):
+    """Warp pixels around an animated transition-edge mask.
+
+    The edge-mask gradient supplies a local normal. Sampling toward that normal
+    creates a brief lens-like expansion/compression, while a tangent component
+    makes smaller ripples crawl along the wave front.
+    """
+    if images.ndim != 4:
+        raise ValueError(f"IMAGE must be [B,H,W,C], got {tuple(images.shape)}")
+    frames, h, w, channels = map(int, images.shape)
+    device, dtype = images.device, images.dtype
+    mask = _prepare_mask(transition_edges, frames, h, w, images)
+
+    width = max(0.1, float(warp_width))
+    shaped = mask.pow(1.0 / width)
+    smooth = F.avg_pool2d(shaped, kernel_size=5, stride=1, padding=2)
+    padded = F.pad(smooth, (1, 1, 1, 1), mode="replicate")
+    grad_x = 0.5 * (padded[:, :, 1:-1, 2:] - padded[:, :, 1:-1, :-2])
+    grad_y = 0.5 * (padded[:, :, 2:, 1:-1] - padded[:, :, :-2, 1:-1])
+    magnitude = torch.sqrt(grad_x.square() + grad_y.square() + 1e-8)
+    normal_x, normal_y = grad_x / magnitude, grad_y / magnitude
+    tangent_x, tangent_y = -normal_y, normal_x
+
+    yy = torch.linspace(-0.5, 0.5, h, device=device, dtype=dtype)[None, None, :, None]
+    xx = torch.linspace(-0.5, 0.5, w, device=device, dtype=dtype)[None, None, None, :]
+    frame_phase = (
+        torch.arange(frames, device=device, dtype=dtype)
+        / max(1, frames)
+    )[:, None, None, None]
+    ripple = torch.sin(
+        2
+        * math.pi
+        * (
+            yy * float(ripple_scale)
+            + xx * float(ripple_scale) * 0.37
+            + frame_phase * float(ripple_speed)
+        )
+    )
+
+    active = shaped * (0.35 + 0.65 * mask)
+    displacement_x = active * (
+        normal_x * float(warp_strength)
+        + tangent_x * ripple * float(ripple_amount)
+    )
+    displacement_y = active * (
+        normal_y * float(warp_strength)
+        + tangent_y * ripple * float(ripple_amount)
+    )
+
+    base_y, base_x = torch.meshgrid(
+        torch.linspace(-1, 1, h, device=device, dtype=dtype),
+        torch.linspace(-1, 1, w, device=device, dtype=dtype),
+        indexing="ij",
+    )
+    base_grid = torch.stack((base_x, base_y), dim=-1)[None].expand(frames, -1, -1, -1)
+    offset_grid = torch.stack(
+        (
+            2.0 * displacement_x[:, 0] / max(1, w),
+            2.0 * displacement_y[:, 0] / max(1, h),
+        ),
+        dim=-1,
+    )
+    grid = base_grid + offset_grid
+    nchw = images.movedim(-1, 1)
+    warped = F.grid_sample(
+        nchw,
+        grid,
+        mode=interpolation,
+        padding_mode="border",
+        align_corners=True,
+    )
+
+    split = float(rgb_split)
+    if split > 0 and channels >= 3:
+        split_grid = torch.stack(
+            (
+                2.0 * normal_x[:, 0] * active[:, 0] * split / max(1, w),
+                2.0 * normal_y[:, 0] * active[:, 0] * split / max(1, h),
+            ),
+            dim=-1,
+        )
+        red = F.grid_sample(
+            nchw[:, 0:1],
+            grid + split_grid,
+            mode=interpolation,
+            padding_mode="border",
+            align_corners=True,
+        )
+        blue = F.grid_sample(
+            nchw[:, 2:3],
+            grid - split_grid,
+            mode=interpolation,
+            padding_mode="border",
+            align_corners=True,
+        )
+        warped = warped.clone()
+        warped[:, 0:1], warped[:, 2:3] = red, blue
+
+    return warped.movedim(1, -1).clamp(0, 1), active[:, 0]
+
+
 def _rand(shape, seed, device, dtype):
     g = torch.Generator(device="cpu").manual_seed(
         int(seed) & 0xFFFFFFFFFFFFFFFF
@@ -432,6 +562,53 @@ class FourWayQuickAlign:
         return images_a, transformed(images_b, "b"), transformed(images_c, "c"), transformed(images_d, "d")
 
 
+class LiquidTransitionWarp:
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "images": ("IMAGE",),
+                "transition_edges": ("MASK",),
+                "warp_strength": ("FLOAT", {"default": 12.0, "min": -96.0, "max": 96.0, "step": 0.5}),
+                "warp_width": ("FLOAT", {"default": 1.4, "min": 0.1, "max": 6.0, "step": 0.1}),
+                "ripple_amount": ("FLOAT", {"default": 3.0, "min": 0.0, "max": 48.0, "step": 0.25}),
+                "ripple_scale": ("FLOAT", {"default": 3.0, "min": 0.1, "max": 20.0, "step": 0.1}),
+                "ripple_speed": ("FLOAT", {"default": 2.0, "min": -12.0, "max": 12.0, "step": 0.1}),
+                "rgb_split": ("FLOAT", {"default": 1.5, "min": 0.0, "max": 24.0, "step": 0.25}),
+                "interpolation": (["bicubic", "bilinear", "nearest"],),
+            }
+        }
+
+    RETURN_TYPES = ("IMAGE", "MASK")
+    RETURN_NAMES = ("images", "warp_mask")
+    FUNCTION = "warp"
+    CATEGORY = CATEGORY
+
+    def warp(
+        self,
+        images,
+        transition_edges,
+        warp_strength,
+        warp_width,
+        ripple_amount,
+        ripple_scale,
+        ripple_speed,
+        rgb_split,
+        interpolation,
+    ):
+        return _liquid_transition_warp(
+            images,
+            transition_edges,
+            warp_strength=warp_strength,
+            warp_width=warp_width,
+            ripple_amount=ripple_amount,
+            ripple_scale=ripple_scale,
+            ripple_speed=ripple_speed,
+            rgb_split=rgb_split,
+            interpolation=interpolation,
+        )
+
+
 class UndulatingGlitchField:
     @classmethod
     def INPUT_TYPES(cls):
@@ -559,6 +736,7 @@ class FourWayUndulatingGlitchMixer:
 
 NODE_CLASS_MAPPINGS = {
     "UG_FourWayQuickAlign": FourWayQuickAlign,
+    "UG_LiquidTransitionWarp": LiquidTransitionWarp,
     "UG_UndulatingGlitchField": UndulatingGlitchField,
     "UG_FourWayFieldComposite": FourWayFieldComposite,
     "UG_FourWayUndulatingGlitchMixer": FourWayUndulatingGlitchMixer,
@@ -566,6 +744,7 @@ NODE_CLASS_MAPPINGS = {
 
 NODE_DISPLAY_NAME_MAPPINGS = {
     "UG_FourWayQuickAlign": "Four-Way Quick Align",
+    "UG_LiquidTransitionWarp": "Liquid Transition Warp",
     "UG_UndulatingGlitchField": "Undulating Glitch Field (4-Way)",
     "UG_FourWayFieldComposite": "Four-Way Field Composite",
     "UG_FourWayUndulatingGlitchMixer": "Four-Way Undulating Glitch Mixer",
