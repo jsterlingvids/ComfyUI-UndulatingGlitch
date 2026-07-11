@@ -114,7 +114,6 @@ For a liquid-glitch wave travelling left to right through all four sources:
 ```text
 mode: liquid_wipe
 cycle_frames: 128
-transition_fraction: 1.00
 angle: 0
 wave_count: 2.4
 wave_amplitude: 0.18
@@ -128,12 +127,15 @@ tear_height: 20
 tear_amount: 0.012
 glitch_speed: 7
 edge_softness: 18
+wave_overlap: 0.08
 blend_curve: smoothstep
 ```
 
-At 24 fps, `cycle_frames: 128` makes one complete A → B → C → D → A cycle last about 5.3 seconds. With `transition_fraction: 1.00`, each new boundary begins as soon as the previous one exits.
+At 24 fps, `cycle_frames: 128` makes one complete A → B → C → D → A cycle last about 5.3 seconds. `wave_overlap: 0.08` starts the next boundary just before the previous one finishes leaving the frame, keeping the motion nearly constant without a hard reset.
 
 In `liquid_wipe`, `wave_amplitude` controls the overall depth of the advancing lobes, `wave_count` controls their density, and `wave_speed` controls how actively the large and small ripples crawl along the transition edge. Whole-number wave speeds produce a seamless complete effect cycle.
+
+`transition_fraction` is used only by `sequential_wipe`. Liquid mode uses a continuous multi-front timing model instead: `wave_overlap: 0.00` places the outgoing and incoming fronts at opposite edges simultaneously, while values around `0.05–0.12` create a small, smooth overlap. Higher values put more than one transition visibly inside the frame.
 
 For harder digital blocks, increase `block_jitter`, lower `edge_softness`, and use `hard` blending. For a flowing liquid boundary, reduce `block_jitter` and `tear_amount`, then increase `wave_amplitude` and `edge_softness`.
 
@@ -164,4 +166,4 @@ A release should include a short demo GIF/video and a downloadable example workf
 
 ## Status
 
-Prototype `0.4.0`. The core effect, liquid movement and transition-warp models, tensor handling, and quick alignment transforms are implemented and covered by basic tests, but the pack still benefits from real-world testing inside your specific ComfyUI installation and VHS workflow.
+Prototype `0.5.0`. The core effect, continuous liquid timing, transition-warp models, tensor handling, and quick alignment transforms are implemented and covered by tests, but the pack still benefits from real-world testing inside your specific ComfyUI installation and VHS workflow.
