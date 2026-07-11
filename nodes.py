@@ -125,6 +125,51 @@ def _coords(h, w, angle, device, dtype):
     return (along / (2 * extent) + 0.5)[None], perp[None]
 
 
+def _liquid_wave(perp, phase, wave_count, wave_amplitude, wave_speed):
+    """Return a loop-friendly, domain-warped liquid displacement field.
+
+    Several differently sized waves share the same travelling phase. The larger
+    lobe makes the front surge while the higher octaves crawl along its edge.
+    Integer wave speeds remain seamless over a complete effect cycle.
+    """
+    cycles = max(0.05, float(wave_count))
+    amplitude = float(wave_amplitude)
+    motion = phase * float(wave_speed)
+
+    # Bend the coordinate before evaluating the visible waves. This domain warp
+    # stops the edge from looking like several clean sine curves added together.
+    flow_coord = perp + amplitude * (
+        0.46
+        * torch.sin(2 * math.pi * (perp * cycles * 0.48 + motion))
+        + 0.22
+        * torch.sin(
+            2 * math.pi * (perp * cycles * 1.13 - motion * 2) + 1.37
+        )
+    )
+
+    large_lobes = torch.sin(
+        2 * math.pi * (flow_coord * cycles - motion)
+    )
+    travelling_ripples = torch.sin(
+        2 * math.pi * (flow_coord * cycles * 2.07 + motion * 2) + 1.11
+    )
+    fine_ripples = torch.sin(
+        2 * math.pi * (flow_coord * cycles * 4.31 - motion * 3) + 2.43
+    )
+    surges = torch.sin(
+        2 * math.pi * (perp * cycles * 0.63 - motion)
+    ) * torch.sin(
+        2 * math.pi * (flow_coord * cycles * 1.37 + motion * 2) + 0.71
+    )
+
+    return amplitude * (
+        0.54 * large_lobes
+        + 0.25 * travelling_ripples
+        + 0.11 * fine_ripples
+        + 0.10 * surges
+    )
+
+
 def _field(
     frames,
     h,
@@ -157,9 +202,14 @@ def _field(
     phase = torch.remainder(f / max(4, int(cycle_frames)), 1.0)
     p = phase[:, None, None]
     along, perp = _coords(h, w, angle, device, dtype)
-    wave = wave_amplitude * torch.sin(
-        2 * math.pi * (perp * wave_count - p * wave_speed)
-    )
+    if mode == "liquid_wipe":
+        wave = _liquid_wave(
+            perp, p, wave_count, wave_amplitude, wave_speed
+        )
+    else:
+        wave = wave_amplitude * torch.sin(
+            2 * math.pi * (perp * wave_count - p * wave_speed)
+        )
 
     noise = torch.zeros((frames, h, w), device=device, dtype=dtype)
     pars = _rand((4, 4), seed + 11, device, dtype)
@@ -284,7 +334,7 @@ def _composite(xs, field, curve):
 
 
 EFFECT_INPUTS = {
-    "mode": (["sequential_wipe", "four_way_bands"],),
+    "mode": (["sequential_wipe", "liquid_wipe", "four_way_bands"],),
     "cycle_frames": ("INT", {"default": 96, "min": 4, "max": 10000, "step": 4}),
     "transition_fraction": ("FLOAT", {"default": 0.78, "min": 0.01, "max": 1.0, "step": 0.01}),
     "angle": ("FLOAT", {"default": 0.0, "min": -180.0, "max": 180.0, "step": 1.0}),
