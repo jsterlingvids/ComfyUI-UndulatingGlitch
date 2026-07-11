@@ -66,9 +66,13 @@ ripple_scale: 3
 ripple_speed: 2
 rgb_split: 1.5
 interpolation: bicubic
+color_fringe: off
+color_fringe_strength: 0.08
 ```
 
 Use a negative `warp_strength` to reverse the lens direction. Reduce `rgb_split` to zero for a purely liquid/refraction effect.
+
+Enable `color_fringe` for a restrained optical grade on the two slopes of the active wave: opposing cyan/magenta bias, slight desaturation, and a small contrast lift. This is separate from `rgb_split`, which physically offsets the channels. Start with `color_fringe_strength: 0.08`; values above about `0.15` become intentionally stylized rather than subtle.
 
 ## Installation
 
@@ -166,4 +170,4 @@ A release should include a short demo GIF/video and a downloadable example workf
 
 ## Status
 
-Prototype `0.5.0`. The core effect, continuous liquid timing, transition-warp models, tensor handling, and quick alignment transforms are implemented and covered by tests, but the pack still benefits from real-world testing inside your specific ComfyUI installation and VHS workflow.
+Prototype `0.6.0`. The core effect, continuous liquid timing, transition-warp and color-fringe models, tensor handling, and quick alignment transforms are implemented and covered by tests, but the pack still benefits from real-world testing inside your specific ComfyUI installation and VHS workflow.
