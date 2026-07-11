@@ -219,6 +219,8 @@ def test_liquid_transition_warp_zero_strength_is_identity():
         interpolation="nearest",
         color_fringe=False,
         color_fringe_strength=1.0,
+        water_ripple=False,
+        water_ripple_strength=10.0,
     )
 
     assert output.shape == image.shape
@@ -296,6 +298,63 @@ def test_color_fringe_is_subtle_localized_and_toggleable():
     ).abs()[:, :, 18:30]
     assert float(edge_channel_split.max()) > 1e-4
     assert float(difference.max()) < 0.08
+
+
+def test_water_ripple_creates_decaying_secondary_bands():
+    image, edge = transition_fixture()
+    base, _ = nodes._liquid_transition_warp(
+        image,
+        edge,
+        warp_strength=0.0,
+        ripple_amount=0.0,
+        rgb_split=0.0,
+        interpolation="bilinear",
+        color_fringe=False,
+        water_ripple=False,
+        water_ripple_strength=12.0,
+    )
+    rippled, warp_mask = nodes._liquid_transition_warp(
+        image,
+        edge,
+        warp_strength=0.0,
+        ripple_amount=0.0,
+        rgb_split=0.0,
+        interpolation="bilinear",
+        color_fringe=False,
+        water_ripple=True,
+        water_ripple_strength=2.0,
+    )
+
+    difference = (rippled - base).abs().mean(dim=-1).mean(dim=(0, 1))
+    center = float(difference[22:26].max())
+    secondary_bands = float(
+        torch.cat((difference[14:22], difference[26:34])).max()
+    )
+    far_edges = float(
+        torch.cat((difference[:5], difference[-5:])).max()
+    )
+
+    assert torch.allclose(base, image, atol=2e-6)
+    assert secondary_bands > center
+    assert secondary_bands > 1e-3
+    assert far_edges < 1e-5
+    assert warp_mask.shape == edge.shape
+
+
+def test_water_ripple_zero_strength_is_identity():
+    image, edge = transition_fixture()
+    output, _ = nodes._liquid_transition_warp(
+        image,
+        edge,
+        warp_strength=0.0,
+        ripple_amount=0.0,
+        rgb_split=0.0,
+        interpolation="nearest",
+        color_fringe=False,
+        water_ripple=True,
+        water_ripple_strength=0.0,
+    )
+    assert torch.equal(output, image)
 
 
 def test_liquid_transition_warp_registered_in_comfyui_mappings():
