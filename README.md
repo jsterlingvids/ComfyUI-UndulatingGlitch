@@ -1,10 +1,24 @@
 # ComfyUI Undulating Glitch
 
-A small, dependency-free ComfyUI node pack for mixing **four image/video batches** with a travelling, undulating, block-glitched transition field.
+A small, dependency-free ComfyUI node pack for aligning and mixing **four image/video batches** with a travelling, undulating, block-glitched transition field.
 
-The first version was designed for four similarly framed performance videos: the dominant source cycles A → B → C → D → A while an irregular wave boundary crosses the frame. It can also display all four sources simultaneously as moving bands.
+The node pack was designed for four similarly framed performance videos: the dominant source cycles A → B → C → D → A while an irregular wave boundary crosses the frame. It can also display all four sources simultaneously as moving bands.
 
 ## Nodes
+
+### Four-Way Quick Align
+
+Uses input A as the reference canvas and provides independent alignment controls for inputs B, C, and D:
+
+- X and Y offset in pixels
+- scale
+- rotation in degrees
+- interpolation quality
+- white, black, border, or reflected edge filling
+
+The four aligned batches are returned separately so they can feed directly into **Four-Way Undulating Glitch Mixer**. Input A is passed through unchanged. Inputs B–D are resized to A's dimensions before their transforms are applied.
+
+For isolated heads on a white background, start with `fill_mode: white` and `interpolation: bicubic`. Adjust scale first, then X/Y position, and use rotation only for small eye-line corrections.
 
 ### Four-Way Undulating Glitch Mixer
 
@@ -63,28 +77,28 @@ No extra Python packages are required; it only uses PyTorch already included wit
 
 ## Suggested starting settings
 
-For a single wave travelling left to right through all four sources:
+For a continuous wave travelling left to right through all four sources:
 
 ```text
 mode: sequential_wipe
-cycle_frames: 96
-transition_fraction: 0.78
+cycle_frames: 144
+transition_fraction: 1.00
 angle: 0
-wave_count: 1.5
-wave_amplitude: 0.10
-wave_speed: 1
-noise_amount: 0.055
+wave_count: 2.0
+wave_amplitude: 0.15
+wave_speed: 4
+noise_amount: 0.025
 noise_scale: 2
 block_size: 48
-block_jitter: 0.055
+block_jitter: 0.020
 tear_height: 20
-tear_amount: 0.035
+tear_amount: 0.015
 glitch_speed: 6
-edge_softness: 10
+edge_softness: 14
 blend_curve: smoothstep
 ```
 
-At 24 fps, `cycle_frames: 96` makes one complete A → B → C → D → A cycle last four seconds.
+At 24 fps, `cycle_frames: 144` makes one complete A → B → C → D → A cycle last six seconds. With `transition_fraction: 1.00`, each new boundary begins as soon as the previous one exits.
 
 For harder digital blocks, increase `block_jitter`, lower `edge_softness`, and use `hard` blending. For a flowing liquid boundary, reduce `block_jitter` and `tear_amount`, then increase `wave_amplitude` and `edge_softness`.
 
@@ -97,7 +111,7 @@ The four videos should ideally share the same:
 - duration/frame count
 - framing and subject scale
 
-`frame_alignment` can trim, loop, or stretch shorter batches. Inputs B–D are resized to input A's dimensions.
+Use **Four-Way Quick Align** when composition or head placement differs slightly. The mixer's `frame_alignment` setting can then trim, loop, or stretch shorter batches.
 
 ## Publishing
 
@@ -115,4 +129,4 @@ A release should include a short demo GIF/video and a downloadable example workf
 
 ## Status
 
-Prototype `0.1.0`. The core effect and tensor handling are implemented and covered by basic tests, but it still needs real-world testing inside your specific ComfyUI installation and VHS workflow.
+Prototype `0.2.0`. The core effect, tensor handling, and quick alignment transforms are implemented and covered by basic tests, but the pack still benefits from real-world testing inside your specific ComfyUI installation and VHS workflow.
