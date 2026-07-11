@@ -37,6 +37,7 @@ def effect_kwargs():
         edge_softness=2.0,
         band_count=1,
         seed=42,
+        wave_overlap=0.08,
     )
 
 
@@ -87,6 +88,32 @@ def test_liquid_wipe_is_animated_and_loop_compatible():
     assert not torch.allclose(field[0], field[1])
     assert torch.allclose(field[0], field[16], atol=2e-5)
     assert torch.allclose(edge[0], edge[16], atol=2e-5)
+
+
+def test_liquid_wipe_keeps_a_transition_front_on_screen():
+    kwargs = effect_kwargs()
+    kwargs.update(
+        mode="liquid_wipe",
+        cycle_frames=64,
+        transition_fraction=0.25,
+        wave_count=2.4,
+        wave_amplitude=0.18,
+        wave_speed=5.0,
+        edge_softness=1.0,
+        wave_overlap=0.08,
+    )
+    field, edge = nodes._field(64, 64, 64, **kwargs)
+    active_edge_per_frame = edge.amax(dim=(1, 2))
+
+    assert field.shape == (64, 64, 64)
+    assert torch.all(active_edge_per_frame > 0.5)
+
+    # transition_fraction intentionally belongs to sequential_wipe only. Liquid
+    # timing is controlled by wave_overlap and must not reintroduce solid holds.
+    kwargs["transition_fraction"] = 1.0
+    field_at_one, edge_at_one = nodes._field(64, 64, 64, **kwargs)
+    assert torch.allclose(field, field_at_one)
+    assert torch.allclose(edge, edge_at_one)
 
 
 def test_liquid_wave_contains_more_edge_detail_than_single_sine():
