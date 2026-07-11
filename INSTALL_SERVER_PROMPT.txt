@@ -1,0 +1,35 @@
+Install or update `ComfyUI-UndulatingGlitch` from GitHub in the active ComfyUI installation on this server.
+
+Repository:
+https://github.com/jsterlingvids/ComfyUI-UndulatingGlitch
+
+Please do the following:
+
+1. Locate the real ComfyUI root directory by finding a directory containing both `main.py` and `custom_nodes/`. Do not assume a path without checking.
+2. Set the intended install path to:
+   `<COMFYUI_ROOT>/custom_nodes/ComfyUI-UndulatingGlitch`
+3. If that path does not exist, clone the repository there:
+   `git clone https://github.com/jsterlingvids/ComfyUI-UndulatingGlitch.git <INSTALL_PATH>`
+4. If the repository is already installed, verify its remote URL, preserve any local changes, and update safely with `git pull --ff-only`. Do not discard or overwrite local modifications.
+5. Do not install additional Python packages. The node pack only depends on PyTorch already provided by ComfyUI.
+6. Validate the installation:
+   - confirm `__init__.py`, `nodes.py`, and `README.md` exist;
+   - run `python -m pytest -q` only if pytest is already available;
+   - import the node package using the same Python environment ComfyUI uses;
+   - confirm `NODE_CLASS_MAPPINGS` contains the three expected nodes.
+7. Restart ComfyUI using the server's existing service or process-management method. Do not invent a new service or kill unrelated Python processes.
+8. Check the startup logs for import errors mentioning `ComfyUI-UndulatingGlitch` or `undulating_glitch`.
+9. Report:
+   - detected ComfyUI root;
+   - installed path;
+   - cloned or updated commit SHA;
+   - whether local changes were found;
+   - test/import result;
+   - restart result;
+   - relevant startup log lines;
+   - whether these nodes should now appear:
+     - `Four-Way Undulating Glitch Mixer`
+     - `Undulating Glitch Field (4-Way)`
+     - `Four-Way Field Composite`
+
+Make only the installation or update changes described above. Do not modify the node source code unless installation fails; report the exact failure before changing anything.
