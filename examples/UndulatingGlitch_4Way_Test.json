@@ -177,7 +177,7 @@
       ],
       "title": "LIQUID FOUR-WAY GLITCH MIXER",
       "properties": {"Node name for S&R": "UG_FourWayUndulatingGlitchMixer"},
-      "widgets_values": ["trim_shortest", "smoothstep", "liquid_wipe", 128, 1.0, 0.0, 2.4, 0.18, 5.0, 0.035, 3.0, 2.0, 48, 0.018, 20, 0.012, 7.0, 18.0, 1, 42]
+      "widgets_values": ["trim_shortest", "smoothstep", "liquid_wipe", 128, 1.0, 0.0, 2.4, 0.18, 5.0, 0.035, 3.0, 2.0, 48, 0.018, 20, 0.012, 7.0, 18.0, 1, 42, 0.08]
     },
     {
       "id": 9,
